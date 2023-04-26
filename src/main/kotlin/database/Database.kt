@@ -13,4 +13,8 @@ class Database {
     private val database = mongoClient.getDatabase("messaging_app")
 
     fun <T> getCollection(name: String, type: Class<T>) = database.getCollection(name, type)
+
+    fun reset() {
+        database.drop()
+    }
 }

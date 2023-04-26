@@ -7,6 +7,7 @@ import com.example.messaging.database.FileRepository
 import com.example.messaging.database.UserRepository
 import com.example.messaging.database.MessageRepository
 import java.net.ServerSocket
+import kotlin.concurrent.thread
 
 fun main() {
     // Initialize the database
@@ -27,6 +28,8 @@ fun main() {
     )
 
     // Initialize and start the server
-    val server = ServerTCP(socket, connectionHandler)
-    server.start()
+    thread {
+        val server = ServerTCP(socket, connectionHandler)
+        server.start()
+    }
 }

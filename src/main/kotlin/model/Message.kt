@@ -8,7 +8,7 @@ data class Message(
     val senderId: ObjectId,
     val recipientId: ObjectId,
     val text: String,
-    val attachedFile: ObjectId?,
+    val attachedFileId: ObjectId?,
     val timestamp: LocalDateTime = LocalDateTime.now()
 ) {
     override fun equals(other: Any?): Boolean {
@@ -21,7 +21,7 @@ data class Message(
         if (senderId != other.senderId) return false
         if (recipientId != other.recipientId) return false
         if (text != other.text) return false
-        if (attachedFile != other.attachedFile) return false
+        if (attachedFileId != other.attachedFileId) return false
 
         return true
     }
@@ -31,7 +31,7 @@ data class Message(
         result = 31 * result + senderId.hashCode()
         result = 31 * result + recipientId.hashCode()
         result = 31 * result + text.hashCode()
-        result = 31 * result + attachedFile.hashCode()
+        result = 31 * result + attachedFileId.hashCode()
         return result
     }
 }

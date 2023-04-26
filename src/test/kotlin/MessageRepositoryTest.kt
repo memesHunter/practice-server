@@ -13,13 +13,13 @@ import org.junit.jupiter.api.Test
 
 class MessageRepositoryTest {
 
-    private val testSender = User(username = "sender", password = "pass")
-    private val testRecipient = User(username = "recipient", password = "pass")
+    private val testSender = User(username = "sender", password = "pass", authToken = "testAuth1")
+    private val testRecipient = User(username = "recipient", password = "pass", authToken = "testAuth2")
     private val testMessage = Message(
         senderId = testSender.id,
         recipientId = testRecipient.id,
         text = "testText",
-        attachedFile = null
+        attachedFileId = null
     )
     private val messageRepository = MessageRepository(Database())
 

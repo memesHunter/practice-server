@@ -6,12 +6,11 @@ import com.example.messaging.database.UserRepository
 import com.example.messaging.model.DBFile
 import com.example.messaging.model.Message
 import com.example.messaging.model.User
-import java.io.BufferedReader
+import org.slf4j.LoggerFactory
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.io.OutputStreamWriter
 import java.net.Socket
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -22,10 +21,16 @@ class UserMessageHandler(
     private val messageRepository: MessageRepository,
     private val fileRepository: FileRepository
 ) : Runnable {
+    private val logger = LoggerFactory.getLogger(UserMessageHandler::class.java)
     private var running = true
     private var authToken: String? = null
+    private val user: User?
+        get() {
+            return authToken?.let { userRepository.getUserByAuthToken(it) }
+        }
 
     override fun run() {
+        logger.info("Handler started")
         val input = DataInputStream(socket.getInputStream())
         val output = DataOutputStream(socket.getOutputStream())
 
@@ -33,6 +38,7 @@ class UserMessageHandler(
             // Read incoming messages from the client
             while (running) {
                 val message = input.readUTF()
+                logger.info("Message received: $message")
                 if (authToken == null) {
                     // Require authentication for all messages except REGISTER
                     if (message.startsWith("REGISTER")) {
@@ -40,7 +46,7 @@ class UserMessageHandler(
                     } else if (message.startsWith("LOGIN")) {
                         handleLogin(message, output)
                     } else {
-                        output.writeUTF("ERROR Unauthorized\n")
+                        output.writeUTF("ERROR Unauthorized")
                         output.flush()
                     }
                 } else {
@@ -66,27 +72,28 @@ class UserMessageHandler(
     }
 
     private fun handleRegister(message: String, output: DataOutputStream) {
+        logger.info("Registering user")
         val parts = message.split(" ")
         if (parts.size != 3) {
-            output.writeUTF("ERROR Invalid syntax\n")
+            output.writeUTF("ERROR Invalid syntax")
         } else {
             val username = parts[1]
             val password = parts[2]
             val user = userRepository.getUserByUsername(username)
             if (user != null) {
-                output.writeUTF("ERROR User already exists\n")
+                output.writeUTF("ERROR User already exists")
             } else {
                 val hashedToken = hashToken()
-                authToken = hashedToken
                 val newUser = User(username = username, password = password, authToken = hashedToken)
                 userRepository.addUser(newUser)
-                output.writeUTF("OK\n")
+                output.writeUTF("OK")
             }
         }
         output.flush()
     }
 
     private fun handleLogin(message: String, output: DataOutputStream) {
+        logger.info("Logging user in")
         val parts = message.split(" ")
         if (parts.size != 3) {
             output.writeUTF("ERROR Invalid syntax")
@@ -108,9 +115,11 @@ class UserMessageHandler(
 
     /*
     * REGISTER {username} {password}
-    * SEND {senderUserName} {recipientUserName} {text}
-    * RECEIVE {username}
-    * FILE {senderUserName} {recipientUserName} {text} {fileName} {fileLength}
+    * LOGIN {username} {password}
+    * LOGOUT
+    * SEND {recipientUserName} {text}
+    * RECEIVE
+    * FILE {recipientUserName} {text} {fileName} {fileLength}
     *      [4KB chunk
     *      ...
     *      4KB chunk]
@@ -119,98 +128,94 @@ class UserMessageHandler(
         when {
             // handle sending message
             message.startsWith("SEND") -> {
-                val parts = message.split(" ", limit = 4)
-                if (parts.size != 4) {
+                logger.info("Sending message")
+                val parts = message.split(" ", limit = 3)
+                if (parts.size != 3) {
                     writer.writeUTF("ERROR Invalid syntax\n")
                     writer.flush()
                 } else {
-                    val sender = parts[1]
-                    val recipient = parts[2]
-                    val messageBody = parts[3]
-                    sendMessage(sender, recipient, messageBody, writer)
+                    val recipient = parts[1]
+                    val messageBody = parts[2]
+                    sendMessage(recipient, messageBody, writer)
                 }
             }
             // handle receiving messages
-            message.startsWith("RECEIVE") -> {
-                val parts = message.split(" ", limit = 2)
-                if (parts.size != 2) {
-                    writer.writeUTF("ERROR Invalid syntax\n")
-                    writer.flush()
-                } else {
-                    receiveMessages(parts[1], writer)
-                }
+            message == "RECEIVE" -> {
+                logger.info("Receiving messages")
+                receiveMessages(writer)
             }
             // handle sending file
             message.startsWith("FILE") -> {
-                val parts = message.split(" ", limit = 6)
-                if (parts.size != 6) {
-                    writer.writeUTF("ERROR Invalid syntax\n")
+                logger.info("Sending file")
+                val parts = message.split(" ", limit = 5)
+                if (parts.size != 5) {
+                    writer.writeUTF("ERROR Invalid syntax")
                     writer.flush()
                 } else {
-                    val sender = parts[1]
-                    val recipient = parts[2]
-                    val fileName = parts[3]
-                    val fileSize = parts[4].toInt()
-                    val text = parts[5]
-                    sendFile(sender, recipient, text, fileName, fileSize, reader, writer)
+                    val recipient = parts[1]
+                    val fileName = parts[2]
+                    val fileSize = parts[3].toInt()
+                    val text = parts[4]
+                    sendFile(recipient, text, fileName, fileSize, reader, writer)
                 }
             }
             // handle logout
-            message.startsWith("LOGOUT") -> {
+            message == "LOGOUT" -> {
+                logger.info("Logging user out")
                 running = false
                 authToken = null
+                writer.writeUTF("OK")
+                writer.flush()
             }
             // handle other message types
             else -> {
-                writer.writeUTF("ERROR Unknown command\n")
+                logger.error("Invalid command")
+                writer.writeUTF("ERROR Unknown command")
                 writer.flush()
             }
         }
     }
 
-    private fun sendMessage(sender:String, recipient: String, message: String, writer: DataOutputStream) {
+    private fun sendMessage(recipient: String, message: String, writer: DataOutputStream) {
         val recipientUser = userRepository.getUserByUsername(recipient)
-        val senderUser = userRepository.getUserByUsername(sender)
         if (recipientUser == null) {
-            writer.writeUTF("ERROR Recipient not found\n")
+            writer.writeUTF("ERROR Recipient not found")
             writer.flush()
-        } else if (senderUser == null) {
-            writer.writeUTF("ERROR Invalid sender user\n")
+        } else if (user == null) {
+            writer.writeUTF("ERROR Invalid sender user")
             writer.flush()
         } else {
-            val newMessage = Message(senderId = senderUser.id, recipientId = recipientUser.id, text = message, attachedFile = null)
+            val newMessage = Message(senderId = user!!.id, recipientId = recipientUser.id, text = message, attachedFileId = null)
             messageRepository.addMessage(newMessage)
-            writer.writeUTF("OK\n")
+            writer.writeUTF("OK")
             writer.flush()
         }
     }
 
-    private fun receiveMessages(recipient: String, writer: DataOutputStream) {
-        val recipientUser = userRepository.getUserByUsername(recipient)
-        if (recipientUser == null) {
-            writer.writeUTF("ERROR Invalid recipient\n")
+    private fun receiveMessages(writer: DataOutputStream) {
+        if (user == null) {
+            writer.writeUTF("ERROR Invalid recipient")
             writer.flush()
         } else {
-            val messages = messageRepository.getMessagesByRecipientId(recipientUser.id)
+            val messages = messageRepository.getMessagesByRecipientId(user!!.id)
 
-            writer.writeUTF("OK ${messages.size}\n")
+            writer.writeUTF("OK ${messages.size}")
             messages.forEach {
                 val sender = userRepository.getUserById(it.senderId)
                 // TODO null sender handling
-                writer.writeUTF("${sender?.username} ${it.text}\n")
+                writer.writeUTF("${sender?.username} ${it.text}")
             }
             writer.flush()
         }
     }
 
-    private fun sendFile(sender: String, recipient: String, message: String, fileName: String, fileSize: Int, reader: DataInputStream, writer: DataOutputStream) {
+    private fun sendFile(recipient: String, message: String, fileName: String, fileSize: Int, reader: DataInputStream, writer: DataOutputStream) {
         val recipientUser = userRepository.getUserByUsername(recipient)
-        val senderUser = userRepository.getUserByUsername(sender)
         if (recipientUser == null) {
-            writer.writeUTF("ERROR Recipient not found\n")
+            writer.writeUTF("ERROR Recipient not found")
             writer.flush()
-        } else if (senderUser == null) {
-            writer.writeUTF("ERROR Invalid sender user\n")
+        } else if (user == null) {
+            writer.writeUTF("ERROR Invalid sender user")
             writer.flush()
         } else {
             val newFile = DBFile(fileName = fileName)
@@ -228,11 +233,13 @@ class UserMessageHandler(
                 }
 
                 fileRepository.addFile(newFile)
-                writer.writeUTF("OK\n")
+                val newMessage = Message(senderId = user!!.id, recipientId = recipientUser.id, text = message, attachedFileId = newFile.id)
+                messageRepository.addMessage(newMessage)
+                writer.writeUTF("OK")
                 writer.flush()
 
             } catch (e: IOException) {
-                writer.writeUTF("ERROR Unable to receive file\n")
+                writer.writeUTF("ERROR Unable to receive file")
                 writer.flush()
                 // TODO delete file if an error occurred
             } finally {

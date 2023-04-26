@@ -4,6 +4,7 @@ import com.example.messaging.database.FileRepository
 import com.example.messaging.database.MessageRepository
 import com.example.messaging.database.UserRepository
 import kotlinx.coroutines.*
+import org.slf4j.LoggerFactory
 import java.net.ServerSocket
 
 class ConnectionHandlerTCP(
@@ -11,25 +12,25 @@ class ConnectionHandlerTCP(
     private val userRepository: UserRepository,
     private val messageRepository: MessageRepository,
     private val fileRepository: FileRepository,
-    private val coroutineContext: CoroutineDispatcher = Dispatchers.Default
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO)
 ) {
-    fun run() = runBlocking {
+    private val logger = LoggerFactory.getLogger(ConnectionHandlerTCP::class.java)
+    fun run() {
         while (true) {
             try {
                 // Accept incoming connections from clients
-                val socket = withContext(Dispatchers.IO) {
-                    serverSocket.accept()
-                }
+                val socket = serverSocket.accept()
+                logger.info("Server socket accepted")
 
-                // Create a new user message handler for the client
-                val handler = UserMessageHandler(socket, userRepository, messageRepository, fileRepository)
-
-                // Start the user message handler in a new coroutine
-                launch(coroutineContext) {
+                // Launch a new coroutine to handle the connection
+                coroutineScope.launch {
+                    logger.info("Creating handler for user")
+                    val handler = UserMessageHandler(socket, userRepository, messageRepository, fileRepository)
                     handler.run()
                 }
             } catch (e: Exception) {
-                println("Error accepting connection: ${e.message}")
+                logger.error("Error accepting serverSocket connection: ${e.message}")
+                return
             }
         }
     }

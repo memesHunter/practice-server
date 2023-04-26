@@ -18,4 +18,8 @@ class UserRepository(db: Database) {
     fun getUserByUsername(username: String): User? {
         return collection.find(User::username eq username).firstOrNull()
     }
+
+    fun getUserByAuthToken(token: String): User? {
+        return collection.find(User::authToken eq token).firstOrNull()
+    }
 }
