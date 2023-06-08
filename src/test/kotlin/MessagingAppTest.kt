@@ -2,13 +2,11 @@ import com.example.messaging.database.Database
 import com.example.messaging.database.FileRepository
 import com.example.messaging.database.MessageRepository
 import com.example.messaging.database.UserRepository
-import com.example.messaging.handlers.ConnectionHandlerTCP
-import com.example.messaging.server.ServerTCP
+import com.example.messaging.server.Server
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.litote.kmongo.KMongo
 import java.io.*
-import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
@@ -33,19 +31,8 @@ class MessagingAppTest {
         val messageRepo = MessageRepository(db)
         val fileRepo = FileRepository(db)
 
-        // Initialize the server socket
-        val serverSocket = ServerSocket(8080)
-
-        // Initialize the connection handler
-        val connectionHandler = ConnectionHandlerTCP(
-            serverSocket,
-            userRepo,
-            messageRepo,
-            fileRepo
-        )
-
         // Initialize and start the server
-        val server = ServerTCP(serverSocket, connectionHandler)
+        val server = Server(userRepo, messageRepo, fileRepo, 12345, 54321)
         thread {
             server.start()
         }

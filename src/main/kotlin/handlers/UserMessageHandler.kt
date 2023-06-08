@@ -6,11 +6,10 @@ import com.example.messaging.database.UserRepository
 import com.example.messaging.model.DBFile
 import com.example.messaging.model.Message
 import com.example.messaging.model.User
+import com.example.messaging.server.hashToken
+import com.example.messaging.server.splitFile
 import org.slf4j.LoggerFactory
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.io.FileOutputStream
-import java.io.IOException
+import java.io.*
 import java.net.Socket
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -62,13 +61,6 @@ class UserMessageHandler(
 
     fun stop() {
         running = false
-    }
-
-    private fun hashToken(): String {
-        // Use a cryptographic hash function to generate a random token
-        val randomBytes = ByteArray(16)
-        SecureRandom().nextBytes(randomBytes)
-        return MessageDigest.getInstance("SHA-256").digest(randomBytes).joinToString("") { "%02x".format(it) }
     }
 
     private fun handleRegister(message: String, output: DataOutputStream) {
@@ -201,9 +193,20 @@ class UserMessageHandler(
 
             writer.writeUTF("OK ${messages.size}")
             messages.forEach {
-                val sender = userRepository.getUserById(it.senderId)
-                // TODO null sender handling
-                writer.writeUTF("${sender?.username} ${it.text}")
+                val sender = userRepository.getUserById(it.senderId)!! // Impossible to have a null sender
+                writer.writeUTF("${sender.username} ${it.text}")
+
+                if (it.attachedFileId != null) {
+                    val filePath = "./files/${it.attachedFileId}"
+                    val file = File(filePath)
+                    if (file.exists()) {
+                        val fileChunks = splitFile(file.readBytes())
+
+                        fileChunks.forEachIndexed { index, chunk ->
+                            writer.writeUTF("[${index+1}/${fileChunks.size}] ${file.name} $chunk")
+                        }
+                    }
+                }
             }
             writer.flush()
         }
